@@ -585,7 +585,7 @@ function renderConsole(snapshot, language = DEFAULT_PRIVATE_LANGUAGE) {
       <div class="header-meta">${languageSwitch(language)}</div>
     </header>
     <section class="actions">
-      <button class="btn-kill" onclick="confirm('确定停止所有服务？')&&fetch('/kill',{method:'POST'}).then(r=>r.json()).then(d=>{document.body.innerHTML='<main style=text-align:center;padding:80px><h2>已停止</h2><p>关闭标签页</p></main>'})">⏹ 紧急停止</button>
+      <button class="btn-kill" onclick="confirm('确定停止所有 Agent 和 OpenClaw Gateway？')&&fetch('/kill',{method:'POST'}).then(r=>r.json()).then(d=>{document.body.innerHTML='<main style=text-align:center;padding:80px><h2>所有 Agent 和 Gateway 已停止</h2><p>如需重启：schtasks /run /tn \"OpenClaw Gateway\"</p></main>'})">⏹ 停止所有 Agent</button>
       <span class="model-tag">🧠 ${escapeHtml(activeModel)}</span>
       <button class="btn-switch" title="切换 Flash" onclick="switchModel('deepseek/deepseek-v4-flash')">⇄ Flash</button>
       <button class="btn-switch" title="切换 Pro" onclick="switchModel('deepseek/deepseek-v4-pro')">⇄ Pro</button>
@@ -634,10 +634,10 @@ if (process.argv.includes('--once')) {
     if (request.method === 'POST' && request.url === '/kill') {
       try {
         childProcess.execSync(
-          `\"${POWERSHELL}\" -NoProfile -Command \"Get-CimInstance Win32_Process -Filter 'Name=''node.exe''' | Where-Object { $_.CommandLine -like '*adgai-site*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }\"`,
+          `\"${POWERSHELL}\" -NoProfile -Command \"schtasks /end /tn \"OpenClaw Gateway\"; Get-CimInstance Win32_Process -Filter 'Name=''node.exe''' | Where-Object { $_.CommandLine -like '*adgai-site*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }\"`,
           { timeout: 8000, windowsHide: true }
         );
-        sendResponse(response, 200, JSON.stringify({ ok: true, message: 'stopped' }), 'application/json');
+        sendResponse(response, 200, JSON.stringify({ ok: true, message: 'All agents and dashboard stopped' }), 'application/json');
       } catch (error) {
         sendResponse(response, 500, JSON.stringify({ ok: false, error: error.message }), 'application/json');
       }
