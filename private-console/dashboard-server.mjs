@@ -613,7 +613,7 @@ function sendResponse(response, status, body, contentType = 'text/html; charset=
     'Content-Type': contentType,
     'Cache-Control': 'no-store',
     'Content-Security-Policy':
-      "default-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'unsafe-inline'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
     'X-Content-Type-Options': 'nosniff',
   });
   response.end(body);
