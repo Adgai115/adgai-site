@@ -49,6 +49,9 @@ const PRIVATE_COPY = {
       diaries: '日记',
       models: '模型',
       backups: '备份',
+      wechat: '微信数据',
+      todaytask: '负一屏',
+      webchat: 'WebChat',
     },
     detailLabels: {
       free_gb: '空闲',
@@ -60,6 +63,10 @@ const PRIVATE_COPY = {
       public_label: '公开标签',
       latest: '最新',
       error: '错误',
+      total: '会话数',
+      groups: '群聊数',
+      today_msgs: '今日消息',
+      active: '已配置',
     },
   },
   en: {
@@ -93,6 +100,9 @@ const PRIVATE_COPY = {
       diaries: 'Diaries',
       models: 'Models',
       backups: 'Backups',
+      wechat: 'WeChat',
+      todaytask: 'TodayTask',
+      webchat: 'WebChat',
     },
     detailLabels: {
       free_gb: 'free',
@@ -104,6 +114,10 @@ const PRIVATE_COPY = {
       public_label: 'public label',
       latest: 'latest',
       error: 'error',
+      total: 'total',
+      groups: 'groups',
+      today_msgs: 'today msgs',
+      active: 'active',
     },
   },
 };
@@ -204,6 +218,55 @@ function collectBackups() {
   return { status: 'ok', latest: backups[0] ?? 'none' };
 }
 
+function collectWechat() {
+  try {
+    const result = childProcess.spawnSync('python', ['-m', 'wechat_cli.main', 'sessions', '--limit', '100'], {
+      encoding: 'utf8', timeout: 10000, windowsHide: true,
+    });
+    if (result.error || result.status !== 0) return { status: 'degraded', total: 0, groups: 0, error: 'wechat-cli failed' };
+    const data = JSON.parse(result.stdout);
+    const groups = data.filter((s) => s.is_group).length;
+    return { status: 'ok', total: data.length, groups };
+  } catch (error) {
+    return { status: 'failed', total: 0, groups: 0, error: error.message };
+  }
+}
+
+function collectTodayTask() {
+  const configPath = path.join(OPENCLAW_ROOT, 'openclaw.json');
+  if (!fs.existsSync(configPath)) return { status: 'failed', active: false, error: 'config not found' };
+  try {
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    const hasAuth = !!config.skills?.entries?.['today-task']?.config?.authCode;
+    return { status: hasAuth ? 'ok' : 'degraded', active: hasAuth };
+  } catch (error) {
+    return { status: 'failed', active: false, error: error.message };
+  }
+}
+
+function collectWebChat() {
+  const sessionFile = path.join(OPENCLAW_ROOT, 'agents', 'main', 'sessions', '393caa38-89d4-4fe4-a3f9-fe7e76a32bfe.jsonl');
+  if (!fs.existsSync(sessionFile)) return { status: 'degraded', today_msgs: 0, error: 'session file not found' };
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const content = fs.readFileSync(sessionFile, 'utf8');
+    let count = 0;
+    for (const line of content.split('\n')) {
+      try {
+        const obj = JSON.parse(line);
+        if (obj.type === 'message' && obj.message?.role === 'user') {
+          const ts = new Date(obj.timestamp);
+          const tsLocal = new Date(ts.getTime() + 8 * 3600000);
+          if (tsLocal.toISOString().split('T')[0] === today) count++;
+        }
+      } catch {}
+    }
+    return { status: 'ok', today_msgs: count };
+  } catch (error) {
+    return { status: 'failed', today_msgs: 0, error: error.message };
+  }
+}
+
 function buildSnapshot() {
   const resources = {
     disk: collectDisk(),
@@ -212,6 +275,9 @@ function buildSnapshot() {
     diaries: collectDiaries(),
     models: collectModels(),
     backups: collectBackups(),
+    wechat: collectWechat(),
+    todaytask: collectTodayTask(),
+    webchat: collectWebChat(),
   };
   const failedCollectors = Object.entries(resources)
     .filter(([, value]) => value.status !== 'ok')
