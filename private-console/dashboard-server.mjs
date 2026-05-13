@@ -378,6 +378,27 @@ function renderResourceDetails(value, language) {
     .join(', ');
 }
 
+function renderCollectorCard(name, value, language) {
+  const copy = PRIVATE_COPY[language];
+  const label = copy.resources[name] || name;
+  const entries = Object.entries(value).filter(([k]) => k !== 'status' && k !== 'source');
+  const mainMetric = entries[0]
+    ? `<b>${escapeHtml(formatDetailValue(entries[0][0], entries[0][1]))}</b>`
+    : '<b>-</b>';
+  const mainLabel = entries[0]
+    ? escapeHtml(copy.detailLabels[entries[0][0]] || entries[0][0])
+    : '';
+  const subDetails = entries.slice(1).map(([k, v]) =>
+    `<span>${escapeHtml(copy.detailLabels[k] || k)}: ${escapeHtml(formatDetailValue(k, v))}</span>`
+  ).join(' ');
+  return `<div class="card">
+    <div class="card-head"><span>${escapeHtml(label)}</span>${statusChip(value.status ?? 'unknown', language)}</div>
+    <div class="card-metric">${mainMetric}</div>
+    <div class="card-label">${mainLabel}</div>
+    <div class="card-details">${subDetails || 'no detail'}</div>
+  </div>`;
+}
+
 function languageSwitch(language) {
   const zhClass = language === 'zh-CN' ? 'active' : '';
   const enClass = language === 'en' ? 'active' : '';
@@ -389,11 +410,8 @@ function languageSwitch(language) {
 
 function renderConsole(snapshot, language = DEFAULT_PRIVATE_LANGUAGE) {
   const copy = PRIVATE_COPY[language];
-  const rows = Object.entries(snapshot.resources)
-    .map(([name, value]) => {
-      const detail = renderResourceDetails(value, language);
-      return `<tr><td>${escapeHtml(copy.resources[name] || name)}</td><td>${statusChip(value.status ?? 'unknown', language)}</td><td>${detail}</td></tr>`;
-    })
+  const cards = Object.entries(snapshot.resources)
+    .map(([name, value]) => renderCollectorCard(name, value, language))
     .join('');
 
   const gatewayCount = snapshot.resources.gateway.process_count ?? 'unknown';
@@ -413,30 +431,32 @@ function renderConsole(snapshot, language = DEFAULT_PRIVATE_LANGUAGE) {
     :root { color-scheme: dark; --bg: #101114; --panel: #181b20; --line: #2b3038; --text: #e7e9ed; --muted: #9299a6; --accent: #69b7a6; --warn: #d6a94f; }
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    main { max-width: 1040px; margin: 0 auto; padding: 28px; }
-    header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; border-bottom: 1px solid var(--line); padding-bottom: 18px; margin-bottom: 20px; }
-    h1 { margin: 0; font-size: 24px; letter-spacing: 0; }
-    h2 { margin: 0 0 12px; font-size: 18px; letter-spacing: 0; }
-    .subtitle, .muted { color: var(--muted); }
-    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin-bottom: 14px; }
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
-    .stat { border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
-    .stat b { display: block; font-size: 22px; margin-top: 4px; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 10px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
-    th { color: var(--muted); font-weight: 600; }
-    .chip { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 12px; }
+    main { max-width: 1200px; margin: 0 auto; padding: 20px 24px; }
+    header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; border-bottom: 1px solid var(--line); padding-bottom: 14px; margin-bottom: 16px; }
+    h1 { margin: 0; font-size: 22px; }
+    .subtitle, .muted { color: var(--muted); font-size: 12px; }
+    .header-meta { display: flex; align-items: flex-start; gap: 14px; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+    .stat { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
+    .stat span { font-size: 11px; color: var(--muted); }
+    .stat b { display: block; font-size: 18px; margin-top: 2px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-bottom: 12px; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
+    .card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 12px; color: var(--muted); }
+    .card-metric { font-size: 28px; font-weight: 700; }
+    .card-label { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+    .card-details { font-size: 11px; color: var(--muted); }
+    .card-details span { display: inline-block; margin-right: 10px; }
+    .chip { display: inline-block; border-radius: 999px; padding: 1px 6px; font-size: 11px; }
     .chip.ok { background: #173b31; color: #7ee0c8; }
     .chip.warn { background: #453716; color: #f0ca70; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+    .panel p { margin: 4px 0; font-size: 12px; }
     .local { color: var(--accent); font-weight: 600; }
-    .header-meta { display: flex; align-items: flex-start; gap: 14px; }
     .language-switch { display: inline-flex; gap: 2px; border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
     .language-switch a { min-width: 34px; min-height: 28px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted); text-decoration: none; font-weight: 700; font-size: 13px; }
     .language-switch a.active { background: var(--accent); color: #0b1210; }
-    @media (max-width: 720px) {
-      header { flex-direction: column; }
-      .header-meta { width: 100%; justify-content: space-between; }
-    }
+    @media (max-width: 720px) { .stats { grid-template-columns: repeat(2, 1fr); } .grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); } }
   </style>
 </head>
 <body>
@@ -444,29 +464,19 @@ function renderConsole(snapshot, language = DEFAULT_PRIVATE_LANGUAGE) {
     <header>
       <div>
         <h1>${escapeHtml(copy.title)}</h1>
-        <div class="subtitle">${escapeHtml(copy.subtitle)}</div>
+        <div class="subtitle">${escapeHtml(copy.updated)} ${escapeHtml(snapshot.collected_at)}</div>
       </div>
-      <div class="header-meta">
-        <div class="muted">${escapeHtml(copy.updated)} ${escapeHtml(snapshot.collected_at)}</div>
-        ${languageSwitch(language)}
-      </div>
+      <div class="header-meta">${languageSwitch(language)}</div>
     </header>
-    <section class="panel">
-      <div class="stats">
-        <div class="stat"><span class="muted">${escapeHtml(copy.health)}</span><b>${statusChip(snapshot.health.status, language)}</b></div>
-        <div class="stat"><span class="muted">${escapeHtml(copy.gatewayProcesses)}</span><b>${escapeHtml(gatewayCount)}</b></div>
-        <div class="stat"><span class="muted">${escapeHtml(copy.todaySessions)}</span><b>${escapeHtml(sessionCount)}</b></div>
-        <div class="stat"><span class="muted">${escapeHtml(copy.privateMode)}</span><b class="local">127.0.0.1</b></div>
-      </div>
+    <section class="stats">
+      <div class="stat"><span>${escapeHtml(copy.health)}</span><b>${statusChip(snapshot.health.status, language)}</b></div>
+      <div class="stat"><span>${escapeHtml(copy.gatewayProcesses)}</span><b>${escapeHtml(gatewayCount)}</b></div>
+      <div class="stat"><span>${escapeHtml(copy.todaySessions)}</span><b>${escapeHtml(sessionCount)}</b></div>
+      <div class="stat"><span>${escapeHtml(copy.privateMode)}</span><b class="local">127.0.0.1</b></div>
     </section>
+    <section class="grid">${cards}</section>
     <section class="panel">
-      <h2>${escapeHtml(copy.collectors)}</h2>
-      <table><thead><tr><th>${escapeHtml(copy.collector)}</th><th>${escapeHtml(copy.status)}</th><th>${escapeHtml(copy.details)}</th></tr></thead><tbody>${rows}</tbody></table>
-    </section>
-    <section class="panel">
-      <h2>${escapeHtml(copy.releaseBoundary)}</h2>
       <p>${escapeHtml(copy.failedCollectors)}: ${escapeHtml(failed)}</p>
-      <p class="muted">${escapeHtml(copy.boundaryNote)}</p>
     </section>
   </main>
 </body>
