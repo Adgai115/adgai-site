@@ -1,0 +1,16 @@
+{
+  "name": "adgai-site",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "assets": "node scripts/generate-assets.mjs",
+    "private:once": "node private-console/dashboard-server.mjs --once",
+    "private:serve": "node private-console/dashboard-server.mjs",
+    "export": "node exporter/export-public-snapshot.mjs",
+    "scan": "node exporter/scan-public-release.mjs",
+    "public:serve": "node public-site/server.mjs",
+    "build": "npm run assets && npm run private:once && npm run export && npm run scan"
+  }
+}
+

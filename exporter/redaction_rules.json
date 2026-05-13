@@ -1,0 +1,33 @@
+{
+  "blocked_patterns": [
+    "E:\\\\Dev\\\\.openclaw",
+    "E:/Dev/.openclaw",
+    "openclaw.json",
+    "agents\\\\main\\\\sessions",
+    "agents/main/sessions",
+    "workspace\\\\memory",
+    "workspace/memory",
+    "06-backup",
+    "feishu",
+    "lark token",
+    "wechat",
+    "webchat",
+    "cookie",
+    "bearer ",
+    "api_key",
+    "apikey",
+    "secret",
+    "token",
+    "127.0.0.1:18789",
+    "127.0.0.1:18666"
+  ],
+  "blocked_extensions": [
+    ".env",
+    ".log",
+    ".jsonl",
+    ".bak",
+    ".key",
+    ".pem"
+  ]
+}
+

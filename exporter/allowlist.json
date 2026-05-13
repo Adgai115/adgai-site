@@ -1,0 +1,32 @@
+{
+  "source_private_snapshot": "../private-console/snapshots/private_snapshot.json",
+  "output_public_snapshot": "../public-site/data/public_snapshot.json",
+  "public_fields": {
+    "site": [
+      "owner",
+      "tagline",
+      "current_focus",
+      "public_build_time"
+    ],
+    "public_metrics": [
+      "project_count",
+      "public_note_count",
+      "resource_console_status",
+      "last_public_update"
+    ],
+    "featured_projects": [
+      "slug",
+      "name",
+      "summary",
+      "status",
+      "public_url"
+    ],
+    "public_notes": [
+      "title",
+      "summary",
+      "date",
+      "tags"
+    ]
+  }
+}
+

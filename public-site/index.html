@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Adgai 构建本地优先的 AI 系统、资源编排工具和知识自动化工作流。">
+  <title>Adgai - AI 系统与知识自动化</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script src="/assets/site.js" defer></script>
+</head>
+<body data-page="home">
+  <header class="site-header">
+    <a class="brand" href="/">Adgai</a>
+    <div class="header-actions">
+      <nav aria-label="Primary">
+        <a href="#projects" data-i18n="nav.projects">项目</a>
+        <a href="#notes" data-i18n="nav.notes">文章</a>
+        <a href="#now" data-i18n="nav.now">近况</a>
+        <a href="#security" data-i18n="nav.security">安全</a>
+      </nav>
+      <div class="language-toggle" aria-label="Language">
+        <button type="button" data-lang-option="zh-CN">中</button>
+        <button type="button" data-lang-option="en">EN</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow" data-i18n="home.heroEyebrow">本地优先的 AI 系统</p>
+        <h1 data-i18n="home.heroTitle">把私人工作沉淀成公开成果的个人 AI 基础设施。</h1>
+        <p class="lead" data-i18n="home.heroLead">
+          这里展示经过筛选的项目、文章和工作原则。实时资源后台保持私有；公开站只读取脱敏后的发布数据。
+        </p>
+        <div class="hero-actions">
+          <a class="button primary" href="#projects" data-i18n="home.viewProjects">查看项目</a>
+          <a class="button secondary" href="#security" data-i18n="home.securityModel">安全模型</a>
+        </div>
+      </div>
+      <figure class="hero-media">
+        <img src="/assets/resource-workbench.png" alt="私有 AI 资源工作台的抽象预览，包含面板和状态区。" data-i18n-alt="home.heroImageAlt">
+        <figcaption data-i18n="home.heroCaption">公开版脱敏预览。运行细节仍保持私有。</figcaption>
+      </figure>
+    </section>
+
+    <section class="metrics" aria-label="Public metrics" data-i18n-aria-label="home.metricsAria">
+      <div>
+        <span class="label" data-i18n="metrics.projects">项目</span>
+        <strong data-metric="project_count">-</strong>
+      </div>
+      <div>
+        <span class="label" data-i18n="metrics.notes">公开文章</span>
+        <strong data-metric="public_note_count">-</strong>
+      </div>
+      <div>
+        <span class="label" data-i18n="metrics.console">资源后台</span>
+        <strong data-metric="resource_console_status">仅本地</strong>
+      </div>
+      <div>
+        <span class="label" data-i18n="metrics.updated">更新</span>
+        <strong data-metric="last_public_update">-</strong>
+      </div>
+    </section>
+
+    <section id="projects" class="section">
+      <div class="section-head">
+        <p class="eyebrow" data-i18n="projects.eyebrow">精选工作</p>
+        <h2 data-i18n="projects.title">项目</h2>
+      </div>
+      <div class="project-grid" data-projects>
+        <article class="project-card">
+          <span class="status" data-i18n="projects.loadingStatus">加载中</span>
+          <h3 data-i18n="projects.loadingTitle">正在加载项目</h3>
+          <p data-i18n="projects.loadingText">正在读取脱敏后的公开快照。</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="now" class="section split">
+      <div>
+        <p class="eyebrow" data-i18n="now.eyebrow">近况</p>
+        <h2 data-i18n="now.title">当前关注</h2>
+        <ul class="focus-list" data-focus>
+          <li>AI 资源编排</li>
+          <li>个人知识自动化</li>
+        </ul>
+      </div>
+      <div class="policy-panel">
+        <h3 data-i18n="now.policyTitle">以私有为默认的发布流程</h3>
+        <p data-i18n="now.policyText">
+          私有采集器可以读取本地运行数据。公开站只接收经过字段白名单、脱敏和发布扫描后的摘要。
+        </p>
+      </div>
+    </section>
+
+    <section id="notes" class="section">
+      <div class="section-head">
+        <p class="eyebrow" data-i18n="notes.eyebrow">写作</p>
+        <h2 data-i18n="notes.title">公开文章</h2>
+      </div>
+      <div class="notes-list" data-notes>
+        <p class="muted" data-i18n="notes.empty">还没有导出通过审核的公开文章。</p>
+      </div>
+    </section>
+
+    <section id="security" class="section security">
+      <div class="section-head">
+        <p class="eyebrow" data-i18n="security.eyebrow">边界</p>
+        <h2 data-i18n="security.title">安全模型</h2>
+      </div>
+      <div class="security-grid">
+        <div>
+          <h3 data-i18n="security.originTitle">独立来源</h3>
+          <p data-i18n="security.originText">公开内容放在公开域名；私有操作留在本机、VPN 或身份网关保护的子域名。</p>
+        </div>
+        <div>
+          <h3 data-i18n="security.allowlistTitle">白名单导出</h3>
+          <p data-i18n="security.allowlistText">公开数据只从小范围字段白名单生成。本站不会直接读取 OpenClaw 原始数据。</p>
+        </div>
+        <div>
+          <h3 data-i18n="security.scanTitle">发布扫描</h3>
+          <p data-i18n="security.scanText">自动检查会在部署前拦截本地路径、原始会话、日志、凭据和其他敏感字符串。</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span>Adgai</span>
+    <span data-i18n="footer.note">公开站由脱敏数据生成。</span>
+  </footer>
+</body>
+</html>

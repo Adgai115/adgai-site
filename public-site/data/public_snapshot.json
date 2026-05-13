@@ -1,0 +1,42 @@
+{
+  "site": {
+    "owner": "Adgai",
+    "tagline": "Personal AI systems, resource orchestration, and knowledge automation.",
+    "current_focus": [
+      "AI resource orchestration",
+      "local-first personal knowledge systems",
+      "automation that turns private work into public artifacts"
+    ],
+    "public_build_time": "2026-05-13T08:51:36.183Z"
+  },
+  "public_metrics": {
+    "project_count": 3,
+    "public_note_count": 0,
+    "resource_console_status": "local-only",
+    "last_public_update": "2026-05-13"
+  },
+  "featured_projects": [
+    {
+      "slug": "openclaw-resource-console",
+      "name": "OpenClaw Resource Console",
+      "summary": "A local-first operations surface for AI models, tools, tasks, and knowledge output.",
+      "status": "private alpha",
+      "public_url": "/projects/resource-console.html"
+    },
+    {
+      "slug": "intelhub",
+      "name": "IntelHub",
+      "summary": "A structured intelligence collection workflow for recurring sources and briefings.",
+      "status": "active",
+      "public_url": "/projects/intelhub.html"
+    },
+    {
+      "slug": "knowledge-automation",
+      "name": "Knowledge Automation",
+      "summary": "A publishing pipeline that promotes reviewed private notes into public artifacts.",
+      "status": "building",
+      "public_url": "/projects/knowledge-automation.html"
+    }
+  ],
+  "public_notes": []
+}

@@ -1,0 +1,9 @@
+.playwright-cli/
+output/
+*.log
+
+# Private operational data. Regenerate with `npm run private:once`.
+private-console/snapshots/private_snapshot.json
+
+# Local package installs, if the project later adds dependencies.
+node_modules/
