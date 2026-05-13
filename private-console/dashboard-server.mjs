@@ -52,6 +52,7 @@ const PRIVATE_COPY = {
       wechat: '微信数据',
       todaytask: '负一屏',
       webchat: 'WebChat',
+      costs: 'Token',
     },
     detailLabels: {
       free_gb: '空闲',
@@ -67,6 +68,11 @@ const PRIVATE_COPY = {
       groups: '群聊数',
       today_msgs: '今日消息',
       active: '已配置',
+      total_tokens: '消耗',
+      cost_today: '费用',
+      cache_rate: '缓存',
+      top_model: '主力',
+      by_model: '模型',
     },
   },
   en: {
@@ -103,6 +109,7 @@ const PRIVATE_COPY = {
       wechat: 'WeChat',
       todaytask: 'TodayTask',
       webchat: 'WebChat',
+      costs: 'Tokens',
     },
     detailLabels: {
       free_gb: 'free',
@@ -118,6 +125,11 @@ const PRIVATE_COPY = {
       groups: 'groups',
       today_msgs: 'today msgs',
       active: 'active',
+      total_tokens: 'tokens',
+      cost_today: 'cost',
+      cache_rate: 'cache%',
+      top_model: 'top',
+      by_model: 'by model',
     },
   },
 };
@@ -267,6 +279,48 @@ function collectWebChat() {
   }
 }
 
+function collectCosts() {
+  const sessionDir = path.join(OPENCLAW_ROOT, 'agents', 'main', 'sessions');
+  if (!fs.existsSync(sessionDir)) return { status: 'degraded', total_tokens: 0, cost_usd: 0, cache_hit: 0, error: 'no sessions' };
+  try {
+    const today = new Date().toDateString();
+    let totalTokens = 0, totalCost = 0, cacheHits = 0, cacheTotal = 0, byModel = {};
+    for (const name of fs.readdirSync(sessionDir)) {
+      if (!name.endsWith('.jsonl') || name.includes('deleted') || name.includes('checkpoint')) continue;
+      const fp = path.join(sessionDir, name);
+      const stat = safeStat(fp);
+      if (!stat || stat.mtime.toDateString() !== today) continue;
+      const content = fs.readFileSync(fp, 'utf8');
+      for (const line of content.split('\n')) {
+        try {
+          const obj = JSON.parse(line);
+          const usage = obj.message?.usage;
+          if (!usage) continue;
+          totalTokens += usage.totalTokens || 0;
+          totalCost += usage.cost?.total || 0;
+          if (usage.cacheRead) { cacheHits++; cacheTotal += usage.cacheRead; }
+          const model = obj.message?.model || obj.message?.api || 'unknown';
+          if (!byModel[model]) byModel[model] = { tokens: 0, cost: 0 };
+          byModel[model].tokens += usage.totalTokens || 0;
+          byModel[model].cost += usage.cost?.total || 0;
+        } catch {}
+      }
+    }
+    const topModel = Object.entries(byModel).sort((a,b) => b[1].tokens - a[1].tokens)[0];
+    const byModelStr = Object.entries(byModel).slice(0, 3).map(([m,d]) => `${m.split('/').pop()}:${Math.round(d.tokens/1000)}k`).join(' ');
+    return {
+      status: 'ok',
+      total_tokens: Math.round(totalTokens / 1000),
+      cost_today: Math.round(totalCost * 1000) / 1000,
+      cache_rate: totalTokens ? Math.round(cacheTotal / totalTokens * 100) : 0,
+      top_model: topModel?.[0]?.split('/').pop() ?? '-',
+      by_model: byModelStr || '-',
+    };
+  } catch (error) {
+    return { status: 'failed', total_tokens: 0, cost_today: 0, error: error.message };
+  }
+}
+
 function buildSnapshot() {
   const resources = {
     disk: collectDisk(),
@@ -278,6 +332,7 @@ function buildSnapshot() {
     wechat: collectWechat(),
     todaytask: collectTodayTask(),
     webchat: collectWebChat(),
+    costs: collectCosts(),
   };
   const failedCollectors = Object.entries(resources)
     .filter(([, value]) => value.status !== 'ok')
