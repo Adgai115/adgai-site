@@ -444,6 +444,8 @@ function renderConsole(snapshot, language = DEFAULT_PRIVATE_LANGUAGE) {
     .actions { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
     .btn-kill { background: #c0392b; color: #fff; border: none; border-radius: 6px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer; }
     .btn-kill:hover { background: #e74c3c; }
+    .btn-switch { background: var(--panel); color: var(--accent); border: 1px solid var(--accent); border-radius: 6px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .btn-switch:hover { background: var(--accent); color: #0b1210; }
     .model-tag { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--accent); }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-bottom: 12px; }
     .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
@@ -474,8 +476,11 @@ function renderConsole(snapshot, language = DEFAULT_PRIVATE_LANGUAGE) {
       <div class="header-meta">${languageSwitch(language)}</div>
     </header>
     <section class="actions">
-      <button class="btn-kill" onclick="if(confirm('确定停止所有 adgai-site 服务？')){fetch('/kill',{method:'POST'}).then(r=>r.json()).then(d=>{if(d.ok){document.body.innerHTML='<main style=text-align:center;padding:80px><h2>所有服务已停止</h2><p>页面已失效，关闭标签页即可</p></main>'}else{alert('失败: '+d.error)}})}">⏹ 紧急停止</button>
+      <button class="btn-kill" onclick="confirm('确定停止所有服务？')&&fetch('/kill',{method:'POST'}).then(r=>r.json()).then(d=>{document.body.innerHTML='<main style=text-align:center;padding:80px><h2>已停止</h2><p>关闭标签页</p></main>'})">⏹ 紧急停止</button>
       <span class="model-tag">🧠 ${escapeHtml(activeModel)}</span>
+      <button class="btn-switch" title="切换 Flash" onclick="switchModel('deepseek/deepseek-v4-flash')">⇄ Flash</button>
+      <button class="btn-switch" title="切换 Pro" onclick="switchModel('deepseek/deepseek-v4-pro')">⇄ Pro</button>
+      <span style="color:var(--accent);font-size:12px;margin-left:8px">🔒 本地私有</span>
     </section>
     <section class="stats">
       <div class="stat"><span>${escapeHtml(copy.health)}</span><b>${statusChip(snapshot.health.status, language)}</b></div>
@@ -487,6 +492,8 @@ function renderConsole(snapshot, language = DEFAULT_PRIVATE_LANGUAGE) {
     <section class="panel">
       <p>${escapeHtml(copy.failedCollectors)}: ${escapeHtml(failed)}</p>
     </section>
+    <script>function switchModel(m){if(confirm('切换模型为 '+m+'？')){fetch('/switch-model?target='+encodeURIComponent(m),{method:'POST'}).then(r=>r.json()).then(d=>{alert(d.ok?'已切换为 '+d.model:'失败: '+(d.error||''));if(d.ok)location.reload()})}}</script>
+  </main>
   </main>
 </body>
 </html>`;
@@ -527,6 +534,20 @@ if (process.argv.includes('--once')) {
       }
       return;
     }
+    // /switch-model?target=model_name
+    if (request.method === 'POST' && request.url?.startsWith('/switch-model')) {
+      try {
+        const url = new URL(request.url, `http://${HOST}:${PORT}`);
+        const target = url.searchParams.get('target');
+        if (!target) { sendResponse(response, 400, JSON.stringify({ ok: false, error: 'missing target' }), 'application/json'); return; }
+        childProcess.execSync(`openclaw config set agents.defaults.model.primary "${target}"`, { timeout: 10000, windowsHide: true });
+        sendResponse(response, 200, JSON.stringify({ ok: true, model: target }), 'application/json');
+      } catch (error) {
+        sendResponse(response, 500, JSON.stringify({ ok: false, error: error.message }), 'application/json');
+      }
+      return;
+    }
+    // Default: render dashboard
     const snapshot = buildSnapshot();
     writeSnapshot(snapshot);
     sendResponse(response, 200, renderConsole(snapshot, getPrivateLanguage(request)));
