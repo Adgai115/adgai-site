@@ -550,7 +550,42 @@ function renderConsole(snapshot, language = DEFAULT_PRIVATE_LANGUAGE) {
     .stat { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
     .stat span { font-size: 11px; color: var(--muted); }
     .stat b { display: block; font-size: 18px; margin-top: 2px; }
-    .actions { display: flex; gap: 10px; align-items: center; margin-bottom: 14px;btn-kill" onclick="stopAllAgents()">⏹ Stop Agents
+    .actions { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+    .btn-kill { background: #c0392b; color: #fff; border: none; border-radius: 6px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer; }
+    .btn-kill:hover { background: #e74c3c; }
+    .btn-switch { background: var(--panel); color: var(--accent); border: 1px solid var(--accent); border-radius: 6px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .btn-switch:hover { background: var(--accent); color: #0b1210; }
+    .model-tag { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--accent); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-bottom: 12px; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
+    .card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 12px; color: var(--muted); }
+    .card-metric { font-family: 'Cascadia Code','Fira Code','JetBrains Mono','Consolas',monospace; font-size: 28px; font-weight: 700; }
+    .card-label { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+    .card-details { font-size: 11px; color: var(--muted); }
+    .card-details span { display: inline-block; margin-right: 10px; }
+    .chip { display: inline-block; border-radius: 999px; padding: 1px 6px; font-size: 11px; }
+    .chip.ok { background: #173b31; color: #7ee0c8; box-shadow: 0 0 8px rgba(126,224,200,0.15); }
+    .chip.warn { background: #453716; color: #f0ca70; box-shadow: 0 0 8px rgba(240,202,112,0.15); }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+    .panel p { margin: 4px 0; font-size: 12px; }
+    .local { color: var(--accent); font-weight: 600; }
+    .language-switch { display: inline-flex; gap: 2px; border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
+    .language-switch a { min-width: 34px; min-height: 28px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted); text-decoration: none; font-weight: 700; font-size: 13px; }
+    .language-switch a.active { background: var(--accent); color: #0b1210; }
+    @media (max-width: 720px) { .stats { grid-template-columns: repeat(2, 1fr); } .grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>${escapeHtml(copy.title)}</h1>
+        <div class="subtitle">${escapeHtml(copy.updated)} ${escapeHtml(snapshot.collected_at)}</div>
+      </div>
+      <div class="header-meta">${languageSwitch(language)}</div>
+    </header>
+    <section class="actions">
+      <button class="btn-kill" onclick="confirm('确定停止所有服务？')&&fetch('/kill',{method:'POST'}).then(r=>r.json()).then(d=>{document.body.innerHTML='<main style=text-align:center;padding:80px><h2>已停止</h2><p>关闭标签页</p></main>'})">⏹ 紧急停止</button>
       <span class="model-tag">🧠 ${escapeHtml(activeModel)}</span>
       <button class="btn-switch" title="切换 Flash" onclick="switchModel('deepseek/deepseek-v4-flash')">⇄ Flash</button>
       <button class="btn-switch" title="切换 Pro" onclick="switchModel('deepseek/deepseek-v4-pro')">⇄ Pro</button>
@@ -567,27 +602,7 @@ function renderConsole(snapshot, language = DEFAULT_PRIVATE_LANGUAGE) {
       <p>${escapeHtml(copy.failedCollectors)}: ${escapeHtml(failed)}</p>
     </section>
     <script>function switchModel(m){if(confirm('切换模型为 '+m+'？')){fetch('/switch-model?target='+encodeURIComponent(m),{method:'POST'}).then(r=>r.json()).then(d=>{alert(d.ok?'已切换为 '+d.model:'失败: '+(d.error||''));if(d.ok)location.reload()})}}</script>
-    <script>
-function stopAllAgents(){
-  if(!confirm("Stop all agents and Gateway?")) return;
-  fetch("/kill",{method:"POST"}).then(r=>r.json()).then(d=>{
-    if(d.ok){
-      document.querySelector("main").innerHTML="<div style=text-align:center;padding:60px><h2>Gateway Stopped</h2><p>Run: schtasks /run /tn OpenClaw Gateway</p></div>"
-    }else{alert(d.error||"Failed")}
-  })
-}
-</script>
   </main>
-    <script>
-function stopAllAgents(){
-  if(!confirm("Stop all agents and Gateway?")) return;
-  fetch("/kill",{method:"POST"}).then(r=>r.json()).then(d=>{
-    if(d.ok){
-      document.querySelector("main").innerHTML="<div style=text-align:center;padding:60px><h2>Gateway Stopped</h2><p>Run: schtasks /run /tn OpenClaw Gateway</p></div>"
-    }else{alert(d.error||"Failed")}
-  })
-}
-</script>
   </main>
 </body>
 </html>`;
