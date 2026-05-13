@@ -53,6 +53,7 @@ const PRIVATE_COPY = {
       todaytask: '负一屏',
       webchat: 'WebChat',
       costs: 'Token',
+      agent: 'Agent',
     },
     detailLabels: {
       free_gb: '空闲',
@@ -73,6 +74,10 @@ const PRIVATE_COPY = {
       cache_rate: '缓存',
       top_model: '主力',
       by_model: '模型',
+      tool_calls: '工具调用',
+      tasks: '任务',
+      active: '活跃',
+      last_action: '最后活动',
     },
   },
   en: {
@@ -110,6 +115,7 @@ const PRIVATE_COPY = {
       todaytask: 'TodayTask',
       webchat: 'WebChat',
       costs: 'Tokens',
+      agent: 'Agent',
     },
     detailLabels: {
       free_gb: 'free',
@@ -130,6 +136,10 @@ const PRIVATE_COPY = {
       cache_rate: 'cache%',
       top_model: 'top',
       by_model: 'by model',
+      tool_calls: 'calls',
+      tasks: 'tasks',
+      active: 'active',
+      last_action: 'last',
     },
   },
 };
@@ -321,6 +331,49 @@ function collectCosts() {
   }
 }
 
+function collectAgentActivity() {
+  const sessionDir = path.join(OPENCLAW_ROOT, 'agents', 'main', 'sessions');
+  if (!fs.existsSync(sessionDir)) return { status: 'degraded', tool_calls: 0, tasks: 0, active: false, error: 'no sessions' };
+  try {
+    const today = new Date().toDateString();
+    let toolCalls = 0, tasks = 0, lastAction = null;
+    for (const name of fs.readdirSync(sessionDir)) {
+      if (!name.endsWith('.jsonl') || name.includes('deleted') || name.includes('checkpoint')) continue;
+      const fp = path.join(sessionDir, name);
+      const stat = safeStat(fp);
+      if (!stat || stat.mtime.toDateString() !== today) continue;
+      const content = fs.readFileSync(fp, 'utf8');
+      for (const line of content.split('\n')) {
+        try {
+          const obj = JSON.parse(line);
+          if (obj.type === 'message' && obj.message?.role === 'assistant') {
+            const ts = new Date(obj.timestamp);
+            const tsLocal = new Date(ts.getTime() + 8 * 3600000);
+            if (tsLocal.toDateString() !== today) continue;
+            const cnt = obj.message.content || [];
+            const tc = cnt.filter((c) => c.type === 'toolCall' || c.type === 'toolResult').length;
+            toolCalls += tc;
+            if (cnt.some((c) => c.type === 'toolCall')) {
+              tasks++;
+              if (!lastAction || ts > lastAction) lastAction = ts;
+            }
+          }
+        } catch {}
+      }
+    }
+    const minsAgo = lastAction ? Math.round((Date.now() - lastAction.getTime()) / 60000) : null;
+    return {
+      status: 'ok',
+      tool_calls: toolCalls,
+      tasks,
+      active: minsAgo !== null && minsAgo < 5,
+      last_action: minsAgo !== null ? `${minsAgo}m` : '-',
+    };
+  } catch (error) {
+    return { status: 'failed', tool_calls: 0, tasks: 0, active: false, error: error.message };
+  }
+}
+
 function buildSnapshot() {
   const resources = {
     disk: collectDisk(),
@@ -333,6 +386,7 @@ function buildSnapshot() {
     todaytask: collectTodayTask(),
     webchat: collectWebChat(),
     costs: collectCosts(),
+    agent: collectAgentActivity(),
   };
   const failedCollectors = Object.entries(resources)
     .filter(([, value]) => value.status !== 'ok')
