@@ -419,6 +419,7 @@ function renderConsole(snapshot, language = DEFAULT_PRIVATE_LANGUAGE) {
   const failed = snapshot.health.failed_collectors.length
     ? snapshot.health.failed_collectors.map((name) => copy.resources[name] || name).join(', ')
     : copy.noFailedCollectors;
+  const activeModel = snapshot.resources.models.public_label ?? 'unknown';
 
   return `<!doctype html>
 <html lang="${escapeHtml(language)}">
@@ -430,7 +431,7 @@ function renderConsole(snapshot, language = DEFAULT_PRIVATE_LANGUAGE) {
   <style>
     :root { color-scheme: dark; --bg: #101114; --panel: #181b20; --line: #2b3038; --text: #e7e9ed; --muted: #9299a6; --accent: #69b7a6; --warn: #d6a94f; }
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background-image: linear-gradient(rgba(43,48,56,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(43,48,56,0.08) 1px, transparent 1px); background-size: 48px 48px; }
     main { max-width: 1200px; margin: 0 auto; padding: 20px 24px; }
     header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; border-bottom: 1px solid var(--line); padding-bottom: 14px; margin-bottom: 16px; }
     h1 { margin: 0; font-size: 22px; }
@@ -440,16 +441,20 @@ function renderConsole(snapshot, language = DEFAULT_PRIVATE_LANGUAGE) {
     .stat { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; }
     .stat span { font-size: 11px; color: var(--muted); }
     .stat b { display: block; font-size: 18px; margin-top: 2px; }
+    .actions { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+    .btn-kill { background: #c0392b; color: #fff; border: none; border-radius: 6px; padding: 8px 16px; font-size: 13px; font-weight: 700; cursor: pointer; }
+    .btn-kill:hover { background: #e74c3c; }
+    .model-tag { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; font-size: 12px; color: var(--accent); }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-bottom: 12px; }
     .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
     .card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 12px; color: var(--muted); }
-    .card-metric { font-size: 28px; font-weight: 700; }
+    .card-metric { font-family: 'Cascadia Code','Fira Code','JetBrains Mono','Consolas',monospace; font-size: 28px; font-weight: 700; }
     .card-label { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
     .card-details { font-size: 11px; color: var(--muted); }
     .card-details span { display: inline-block; margin-right: 10px; }
     .chip { display: inline-block; border-radius: 999px; padding: 1px 6px; font-size: 11px; }
-    .chip.ok { background: #173b31; color: #7ee0c8; }
-    .chip.warn { background: #453716; color: #f0ca70; }
+    .chip.ok { background: #173b31; color: #7ee0c8; box-shadow: 0 0 8px rgba(126,224,200,0.15); }
+    .chip.warn { background: #453716; color: #f0ca70; box-shadow: 0 0 8px rgba(240,202,112,0.15); }
     .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; margin-bottom: 12px; }
     .panel p { margin: 4px 0; font-size: 12px; }
     .local { color: var(--accent); font-weight: 600; }
@@ -468,6 +473,10 @@ function renderConsole(snapshot, language = DEFAULT_PRIVATE_LANGUAGE) {
       </div>
       <div class="header-meta">${languageSwitch(language)}</div>
     </header>
+    <section class="actions">
+      <button class="btn-kill" onclick="if(confirm('确定停止所有 adgai-site 服务？')){fetch('/kill',{method:'POST'}).then(r=>r.json()).then(d=>{if(d.ok){document.body.innerHTML='<main style=text-align:center;padding:80px><h2>所有服务已停止</h2><p>页面已失效，关闭标签页即可</p></main>'}else{alert('失败: '+d.error)}})}">⏹ 紧急停止</button>
+      <span class="model-tag">🧠 ${escapeHtml(activeModel)}</span>
+    </section>
     <section class="stats">
       <div class="stat"><span>${escapeHtml(copy.health)}</span><b>${statusChip(snapshot.health.status, language)}</b></div>
       <div class="stat"><span>${escapeHtml(copy.gatewayProcesses)}</span><b>${escapeHtml(gatewayCount)}</b></div>
@@ -505,6 +514,19 @@ if (process.argv.includes('--once')) {
 } else {
   runOnce();
   const server = http.createServer((request, response) => {
+    // Kill Switch endpoint
+    if (request.method === 'POST' && request.url === '/kill') {
+      try {
+        childProcess.execSync(
+          `powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter 'Name=''node.exe''' | Where-Object { $_.CommandLine -like '*adgai-site*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"`,
+          { timeout: 8000, windowsHide: true }
+        );
+        sendResponse(response, 200, JSON.stringify({ ok: true, message: 'stopped' }), 'application/json');
+      } catch (error) {
+        sendResponse(response, 500, JSON.stringify({ ok: false, error: error.message }), 'application/json');
+      }
+      return;
+    }
     const snapshot = buildSnapshot();
     writeSnapshot(snapshot);
     sendResponse(response, 200, renderConsole(snapshot, getPrivateLanguage(request)));
