@@ -634,7 +634,7 @@ if (process.argv.includes('--once')) {
     if (request.method === 'POST' && request.url === '/kill') {
       try {
         childProcess.execSync(
-          `powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter 'Name=''node.exe''' | Where-Object { $_.CommandLine -like '*adgai-site*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"`,
+          `\"${POWERSHELL}\" -NoProfile -Command \"Get-CimInstance Win32_Process -Filter 'Name=''node.exe''' | Where-Object { $_.CommandLine -like '*adgai-site*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }\"`,
           { timeout: 8000, windowsHide: true }
         );
         sendResponse(response, 200, JSON.stringify({ ok: true, message: 'stopped' }), 'application/json');
