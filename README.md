@@ -53,3 +53,7 @@ private collectors -> private_snapshot.json -> exporter allowlist -> public_snap
 ## Operations
 
 See [docs/operations-manual.md](docs/operations-manual.md) for daily startup, restart, release, health check, troubleshooting, and rollback procedures.
+
+## Development Setup
+
+See [docs/development-setup-plan.md](docs/development-setup-plan.md) for the current implementation-based development steps, local setup flow, feature workflow, validation, and deployment plan.
