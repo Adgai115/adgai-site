@@ -28,6 +28,7 @@ function scan() {
   const rules = readJson(RULES_PATH);
   const blockedPatterns = rules.blocked_patterns.map((pattern) => pattern.toLowerCase());
   const blockedExtensions = new Set(rules.blocked_extensions.map((ext) => ext.toLowerCase()));
+  const binaryExtensions = new Set(['.mp4','.webm','.mov','.avi','.png','.jpg','.jpeg','.gif','.webp','.svg','.ico','.woff','.woff2','.ttf','.eot','.pdf','.zip','.gz','.tar','.exe','.dll','.mp3','.wav','.ogg']);
   const findings = [];
 
   for (const filePath of walk(PUBLIC_ROOT)) {
@@ -37,6 +38,10 @@ function scan() {
 
     if (blockedExtensions.has(ext)) {
       findings.push(`blocked extension: ${rel}`);
+      continue;
+    }
+
+    if (binaryExtensions.has(ext)) {
       continue;
     }
 

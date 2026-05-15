@@ -714,6 +714,73 @@ function collectAgentActivity() {
   }
 }
 
+function parseKnowledgeMarkdown(body, platform) {
+  if (!body) return [];
+  const entries = [];
+  const sections = body.split(/\n(?=### \d+\. )/);
+  for (const section of sections) {
+    const titleMatch = section.match(/^### \d+\. (.+)$/m);
+    if (!titleMatch) continue;
+    const summary = titleMatch[1].trim();
+    const extract = (label) => {
+      const re = new RegExp(`- \\*\\*${label}\\*\\*: (.+)`, 'm');
+      const m = section.match(re);
+      return m ? m[1].trim() : '';
+    };
+    const type = extract('类型');
+    entries.push({
+      summary,
+      detail: extract('详情') || summary,
+      type: type || extract('Type') || '知识条目',
+      platform: platform || extract('Platform') || '',
+      source_group: extract('来源群') || extract('Source group') || '',
+      contributor: extract('参与者') || extract('Participants') || '',
+      time: extract('时间') || extract('Time') || '',
+      tags: type ? [type] : [],
+      signals: [],
+    });
+  }
+  return entries;
+}
+
+function readKnowledgeEntries() {
+  const knowledgeDir = path.join(CHAT_COLLECT_DATA_ROOT, 'knowledge');
+  try {
+    if (!fs.existsSync(knowledgeDir)) return { status: 'ok', entries: [], date: null, files: 0, file: null };
+    const platforms = fs.readdirSync(knowledgeDir, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => d.name);
+    const allEntries = [];
+    let latestDate = null;
+    let totalFiles = 0;
+    let latestFile = null;
+    for (const platform of platforms) {
+      const platformDir = path.join(knowledgeDir, platform);
+      const mdFiles = fs.readdirSync(platformDir)
+        .map((name) => {
+          const match = name.match(/^(\d{4}-\d{2}-\d{2})\.md$/);
+          return match ? { name, date: match[1], file: path.join(platformDir, name) } : null;
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.date.localeCompare(a.date));
+      totalFiles += mdFiles.length;
+      const latestPlatform = mdFiles[0];
+      if (latestPlatform) {
+        if (!latestDate || latestPlatform.date > latestDate || (latestPlatform.date === latestDate && latestFile === null)) {
+          latestDate = latestPlatform.date;
+          latestFile = latestPlatform.file;
+        }
+        const body = fs.readFileSync(latestPlatform.file, 'utf8');
+        const entries = parseKnowledgeMarkdown(body, platform);
+        allEntries.push(...entries);
+      }
+    }
+    return { status: 'ok', entries: allEntries, date: latestDate, files: totalFiles, file: latestFile };
+  } catch (error) {
+    return { status: 'degraded', entries: [], date: null, files: 0, file: null, error: error.message };
+  }
+}
+
 function readJsonFile(filePath) {
   try {
     const stat = safeStat(filePath);
@@ -735,7 +802,7 @@ function readLatestJson(dirPath) {
     if (!fs.existsSync(dirPath)) return { status: 'ok', data: null, file: null, date: null, error: null };
     const files = fs.readdirSync(dirPath)
       .map((name) => {
-        const match = name.match(/^(\d{4}-\d{2}-\d{2})\.json$/);
+        const match = name.match(/^(\d{4}-\d{2}-\d{2})(?:-(.+))?\.json$/);
         if (!match) return null;
         const filePath = path.join(dirPath, name);
         const stat = safeStat(filePath);
@@ -758,7 +825,7 @@ function readLatestReport() {
     if (!fs.existsSync(reportDir)) return { status: 'ok', body: '', file: null, date: null, error: null };
     const files = fs.readdirSync(reportDir)
       .map((name) => {
-        const match = name.match(/^daily-(\d{4}-\d{2}-\d{2})\.md$/);
+        const match = name.match(/^daily-(\d{4}-\d{2}-\d{2})(?:-(.+))?\.md$/);
         if (!match) return null;
         const filePath = path.join(reportDir, name);
         const stat = safeStat(filePath);
@@ -811,9 +878,8 @@ function readLastCollect() {
 
 function collectChatCollector() {
   const errors = [];
-  const knowledgeJson = readLatestJson(path.join(CHAT_COLLECT_DATA_ROOT, 'knowledge'));
-  if (knowledgeJson.status !== 'ok' && knowledgeJson.error) errors.push(`knowledge: ${knowledgeJson.error}`);
-  const knowledgeEntries = Array.isArray(knowledgeJson.data?.entries) ? knowledgeJson.data.entries : [];
+  const knowledgeResult = readKnowledgeEntries();
+  if (knowledgeResult.status !== 'ok' && knowledgeResult.error) errors.push(`knowledge: ${knowledgeResult.error}`);
 
   const statsJson = readLatestJson(path.join(CHAT_COLLECT_DATA_ROOT, 'stats'));
   if (statsJson.status !== 'ok' && statsJson.error) errors.push(`stats: ${statsJson.error}`);
@@ -830,13 +896,13 @@ function collectChatCollector() {
     root: CHAT_COLLECT_DATA_ROOT,
     last_collect: lastCollect,
     knowledge: {
-      status: knowledgeJson.status,
-      date: knowledgeJson.date,
-      file: knowledgeJson.file,
-      files: knowledgeJson.files ?? 0,
-      count: typeof knowledgeJson.data?.count === 'number' ? knowledgeJson.data.count : knowledgeEntries.length,
-      entries: knowledgeEntries,
-      error: knowledgeJson.error,
+      status: knowledgeResult.status,
+      date: knowledgeResult.date,
+      file: knowledgeResult.file,
+      files: knowledgeResult.files ?? 0,
+      count: knowledgeResult.entries.length,
+      entries: knowledgeResult.entries,
+      error: knowledgeResult.error,
     },
     stats: {
       status: statsJson.status,
@@ -1596,25 +1662,7 @@ function renderKnowledgePage(snapshot, request, language) {
     </a>`;
   }).join('');
 
-  const detail = selected
-    ? `<article class="detail-panel">
-        <div class="panel-title">
-          <span>${escapeHtml(selected.type || '知识条目')}</span>
-          <strong>${escapeHtml(selected.platform || '-')}</strong>
-        </div>
-        <h2>${escapeHtml(entryTitle(selected))}</h2>
-        <div class="kv-grid">
-          <span><b>来源</b><em>${escapeHtml(selected.source_group || '-')}</em></span>
-          <span><b>贡献者</b><em>${escapeHtml(selected.contributor || '-')}</em></span>
-          <span><b>时间</b><em>${escapeHtml(formatIsoTime(selected.time))}</em></span>
-          <span><b>日报</b><em>${chatCollector.report?.date ? '已生成' : '待生成'}</em></span>
-        </div>
-        <h3>原文摘要</h3>
-        <div class="detail-copy">${renderMarkdownSafe(selected.detail || selected.summary || '')}</div>
-        <h3>信号与标签</h3>
-        <div class="signal-block">${renderTagList(selected.signals)}${renderTagList(selected.tags)}</div>
-      </article>`
-    : `<article class="detail-panel empty-state">暂无知识条目。请等待 OpenClaw 完成分析并生成 knowledge 文件。</article>`;
+  const detail = renderKnowledgeDetail(selected, chatCollector, language);
 
   return `<section class="page-panel">
     <form class="filter-bar" method="get">
@@ -1636,6 +1684,29 @@ function renderKnowledgePage(snapshot, request, language) {
       ${detail}
     </div>
   </section>`;
+}
+
+function renderKnowledgeDetail(selected, chatCollector, language) {
+  if (!selected) {
+    return '<article class="detail-panel empty-state">暂无知识条目。请等待 OpenClaw 完成分析并生成 knowledge 文件。</article>';
+  }
+  return `<article class="detail-panel">
+    <div class="panel-title">
+      <span>${escapeHtml(selected.type || '知识条目')}</span>
+      <strong>${escapeHtml(selected.platform || '-')}</strong>
+    </div>
+    <h2>${escapeHtml(entryTitle(selected))}</h2>
+    <div class="kv-grid">
+      <span><b>来源</b><em>${escapeHtml(selected.source_group || '-')}</em></span>
+      <span><b>贡献者</b><em>${escapeHtml(selected.contributor || '-')}</em></span>
+      <span><b>时间</b><em>${escapeHtml(formatIsoTime(selected.time))}</em></span>
+      <span><b>日报</b><em>${chatCollector?.report?.date ? '已生成' : '待生成'}</em></span>
+    </div>
+    <h3>原文摘要</h3>
+    <div class="detail-copy">${renderMarkdownSafe(selected.detail || selected.summary || '')}</div>
+    <h3>信号与标签</h3>
+    <div class="signal-block">${renderTagList(selected.signals)}${renderTagList(selected.tags)}</div>
+  </article>`;
 }
 
 function pipelineStep(label, done, meta) {
@@ -1842,7 +1913,7 @@ function renderWorkspaceParts(snapshot, request) {
     return `<a class="${item === view ? 'active' : ''}" href="${escapeHtml(viewHref(item, language))}" title="${escapeHtml(label)}"><span class="nav-short">${escapeHtml(navShortLabel(label))}</span><span class="nav-label">${escapeHtml(label)}</span></a>`;
   }).join('');
   const content = renderPageContent(view, snapshot, request, language);
-  return {
+  const result = {
     language,
     view,
     title: `${copy.title} · ${labels[view]}`,
@@ -1852,6 +1923,25 @@ function renderWorkspaceParts(snapshot, request) {
     topActions: languageSwitchForView(language, view, request),
     content,
   };
+  if (view === 'knowledge') {
+    const url = new URL(request.url || '/', `http://${HOST}:${PORT}`);
+    if (url.searchParams.has('selected')) {
+      const chatCollector = snapshot.chatCollector ?? {};
+      const entries = Array.isArray(chatCollector.knowledge?.entries) ? chatCollector.knowledge.entries : [];
+      const filters = {
+        platform: selectedParam(url, 'platform'),
+        group: selectedParam(url, 'group'),
+        contributor: selectedParam(url, 'contributor'),
+        tag: selectedParam(url, 'tag'),
+        q: selectedParam(url, 'q'),
+      };
+      const filtered = entries.filter((entry) => entryMatches(entry, filters));
+      const selectedIndex = Math.max(0, Math.min(Number(url.searchParams.get('selected')) || 0, Math.max(filtered.length - 1, 0)));
+      const selected = filtered[selectedIndex] || null;
+      result.detailPanel = renderKnowledgeDetail(selected, chatCollector, language);
+    }
+  }
+  return result;
 }
 
 function renderWorkspace(snapshot, request) {
@@ -2262,7 +2352,14 @@ function renderWorkspace(snapshot, request) {
         if(updated)updated.textContent=payload.updated||'';
         if(heading)heading.textContent=payload.heading||'';
         if(topActions&&payload.topActions!==undefined)topActions.innerHTML=payload.topActions;
-        page.innerHTML=payload.content||'';
+        if(payload.detailPanel){
+          const panel=document.querySelector('.detail-panel');
+          if(panel)panel.outerHTML=payload.detailPanel;
+          const sel=String(new URL(location.href).searchParams.get('selected')||'');
+          document.querySelectorAll('.knowledge-item').forEach(function(item,i){item.classList.toggle('active',String(i)===sel);});
+        }else{
+          page.innerHTML=payload.content||'';
+        }
       }
       function swapPayload(payload,options){
         const page=document.getElementById('pageContent');

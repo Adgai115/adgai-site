@@ -7,5 +7,15 @@ private-console/snapshots/private_snapshot.json
 private-console/logs/
 private-console/service/*.exe
 
+# Local backups
+backup/
+*.bak
+
+# Large media assets (keep local)
+public-site/assets/hero-demo.mp4
+
+# Temp scripts
+scripts/check-i18n.*
+
 # Local package installs, if the project later adds dependencies.
 node_modules/
