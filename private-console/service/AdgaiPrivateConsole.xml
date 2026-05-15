@@ -1,0 +1,21 @@
+<service>
+  <id>AdgaiPrivateConsole</id>
+  <name>Adgai Private Console</name>
+  <description>Local-only Adgai private resource dashboard on 127.0.0.1:18666.</description>
+  <executable>E:\Dev\nodejs\node.exe</executable>
+  <arguments>E:\Dev\adgai-site\private-console\dashboard-server.mjs</arguments>
+  <workingdirectory>E:\Dev\adgai-site</workingdirectory>
+  <env name="NODE_ENV" value="production" />
+  <startmode>Automatic</startmode>
+  <stoptimeout>15 sec</stoptimeout>
+  <onfailure action="restart" delay="10 sec" />
+  <onfailure action="restart" delay="30 sec" />
+  <resetfailure>1 hour</resetfailure>
+  <logpath>E:\Dev\adgai-site\private-console\logs</logpath>
+  <log mode="roll-by-size-time">
+    <sizeThreshold>10240</sizeThreshold>
+    <pattern>yyyyMMdd</pattern>
+    <autoRollAtTime>00:00:00</autoRollAtTime>
+    <zipOlderThanNumDays>14</zipOlderThanNumDays>
+  </log>
+</service>

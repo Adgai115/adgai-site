@@ -4,6 +4,8 @@ output/
 
 # Private operational data. Regenerate with `npm run private:once`.
 private-console/snapshots/private_snapshot.json
+private-console/logs/
+private-console/service/*.exe
 
 # Local package installs, if the project later adds dependencies.
 node_modules/
