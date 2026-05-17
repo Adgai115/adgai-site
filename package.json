@@ -5,12 +5,12 @@
   "type": "module",
   "scripts": {
     "assets": "node scripts/generate-assets.mjs",
+    "check:i18n": "node scripts/check-i18n.js",
     "private:once": "node private-console/dashboard-server.mjs --once",
     "private:serve": "node private-console/dashboard-server.mjs",
     "export": "node exporter/export-public-snapshot.mjs",
     "scan": "node exporter/scan-public-release.mjs",
-    "public:serve": "node public-site/server.mjs",
-    "build": "npm run assets && npm run private:once && npm run export && npm run scan"
+
+    "build": "npm run assets && npm run check:i18n && npm run private:once && npm run export && npm run scan"
   }
 }
-

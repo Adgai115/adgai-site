@@ -11,8 +11,6 @@ private-console/service/*.exe
 backup/
 *.bak
 
-# Large media assets (keep local)
-public-site/assets/hero-demo.mp4
 
 # Temp scripts
 scripts/check-i18n.*

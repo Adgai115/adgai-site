@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const PUBLIC_ROOT = path.join(ROOT, 'public-site');
+const PUBLIC_ROOT = path.resolve(ROOT, '..', 'adgai-site-public');
 const RULES_PATH = path.join(ROOT, 'exporter', 'redaction_rules.json');
 
 function readJson(filePath) {
@@ -17,7 +17,7 @@ function walk(dir) {
     const current = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       entries.push(...walk(current));
-    } else {
+    } else if (entry.isFile()) {
       entries.push(current);
     }
   }
@@ -27,8 +27,17 @@ function walk(dir) {
 function scan() {
   const rules = readJson(RULES_PATH);
   const blockedPatterns = rules.blocked_patterns.map((pattern) => pattern.toLowerCase());
+  const blockedRegexes = (Array.isArray(rules.blocked_regex_patterns) ? rules.blocked_regex_patterns : []).map(
+    (src) => new RegExp(src, 'i'),
+  );
   const blockedExtensions = new Set(rules.blocked_extensions.map((ext) => ext.toLowerCase()));
-  const binaryExtensions = new Set(['.mp4','.webm','.mov','.avi','.png','.jpg','.jpeg','.gif','.webp','.svg','.ico','.woff','.woff2','.ttf','.eot','.pdf','.zip','.gz','.tar','.exe','.dll','.mp3','.wav','.ogg']);
+  // SVG is intentionally not in binary list — SVG can carry <script> and event handlers.
+  const binaryExtensions = new Set([
+    '.mp4', '.webm', '.mov', '.avi', '.png', '.jpg', '.jpeg', '.gif', '.webp',
+    '.ico', '.woff', '.woff2', '.ttf', '.eot', '.pdf', '.zip', '.gz', '.tar',
+    '.exe', '.dll', '.mp3', '.wav', '.ogg',
+  ]);
+  const svgDangerous = [/<script\b/i, /\son[a-z]+\s*=/i, /javascript:/i, /<foreignObject\b/i];
   const findings = [];
 
   for (const filePath of walk(PUBLIC_ROOT)) {
@@ -45,21 +54,34 @@ function scan() {
       continue;
     }
 
-    if (base === '.env' || base === '.git') {
+    if (base === '.env' || base === '.git' || base.startsWith('.env.')) {
       findings.push(`blocked file name: ${rel}`);
       continue;
     }
 
     let content;
     try {
-      content = fs.readFileSync(filePath, 'utf8').toLowerCase();
+      content = fs.readFileSync(filePath, 'utf8');
     } catch {
       continue;
     }
+    const lowered = content.toLowerCase();
 
     for (const pattern of blockedPatterns) {
-      if (content.includes(pattern)) {
+      if (lowered.includes(pattern)) {
         findings.push(`blocked pattern '${pattern}' in ${rel}`);
+      }
+    }
+    for (const regex of blockedRegexes) {
+      if (regex.test(content)) {
+        findings.push(`blocked regex /${regex.source}/ in ${rel}`);
+      }
+    }
+    if (ext === '.svg') {
+      for (const sd of svgDangerous) {
+        if (sd.test(content)) {
+          findings.push(`unsafe SVG construct /${sd.source}/ in ${rel}`);
+        }
       }
     }
   }
@@ -75,4 +97,3 @@ if (findings.length) {
 }
 
 console.log('Public release scan passed.');
-

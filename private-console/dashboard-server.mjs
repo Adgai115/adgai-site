@@ -24,6 +24,9 @@ const PRIVATE_LANGUAGES = ['zh-CN', 'en'];
 const DEFAULT_PRIVATE_LANGUAGE = 'zh-CN';
 const PRIVATE_VIEWS = ['overview', 'knowledge', 'collector', 'reports', 'models', 'services', 'assets'];
 const DEFAULT_PRIVATE_VIEW = 'overview';
+const FORCE_REFRESH_RATE_LIMIT_MS = 10_000;
+const ALLOWED_HOSTS = new Set([`127.0.0.1:${PORT}`, `localhost:${PORT}`, `[::1]:${PORT}`]);
+let lastForceRefreshAt = 0;
 
 let snapshotCache = null;
 const snapshotRefresh = {
@@ -179,6 +182,10 @@ const PRIVATE_COPY = {
       cache_rate: 'cache%',
       top_model: 'top',
       by_model: 'by model',
+      total_tokens: 'tokens',
+      cost_today: 'cost',
+      cache_rate: 'cache%',
+      top_model: 'top',
       tool_calls: 'calls',
       tasks: 'tasks',
       active: 'active',
@@ -557,21 +564,66 @@ function collectDiaries() {
   return { status: 'ok', count: files.length, latest: items[0]?.name ?? '-', items };
 }
 
-function collectModels() {
+function collectModels(costsDetail) {
   const configPath = path.join(OPENCLAW_ROOT, 'openclaw.json');
   if (!fs.existsSync(configPath)) return { status: 'failed', count: 0, error: 'openclaw.json not found' };
   try {
     const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    const models = Object.keys(config.agents?.defaults?.models ?? {});
+    const providerModels = config.models?.providers ?? {};
+    const allModels = [];
+    for (const [providerKey, provider] of Object.entries(providerModels)) {
+      for (const m of (provider.models || [])) {
+        allModels.push(`${providerKey}/${m.id}`);
+      }
+    }
     const defaultModel = config.agents?.defaults?.model?.primary ?? '-';
     const fallbacks = config.agents?.defaults?.model?.fallbacks ?? [];
+    const fallbackSet = new Set(fallbacks);
+    const costMap = {};
+    if (Array.isArray(costsDetail)) {
+      for (const d of costsDetail) {
+        costMap[d.model] = d;
+        if (d.short_name) costMap[d.short_name] = d;
+      }
+    }
+    // 收集所有出现过的模型（config + 实际使用），去重
+    const allModelSet = new Set(allModels);
+    if (Array.isArray(costsDetail)) {
+      for (const d of costsDetail) {
+        // 尝试匹配：全名、短名
+        const shortName = d.short_name || d.model.split('/').pop();
+        const alreadyExists = allModelSet.has(d.model) || allModelSet.has(shortName);
+        if (!alreadyExists) {
+          allModels.push(d.model);
+          allModelSet.add(d.model);
+        }
+      }
+    }
+    const seenShort = new Set();
+    const modelRows = allModels.map((model) => {
+      const cost = costMap[model] || costMap[model.split('/').pop()] || {};
+      const shortName = model.split('/').pop();
+      if (seenShort.has(shortName)) return null;
+      seenShort.add(shortName);
+      let role = '';
+      if (model === defaultModel) role = 'default';
+      else if (fallbackSet.has(model)) role = 'fallback';
+      return {
+        model, short_name: shortName, role,
+        is_default: model === defaultModel,
+        tokens: cost.tokens || 0, cost: cost.cost || 0,
+        cache_rate: cost.cache_rate ?? null, requests: cost.requests || 0,
+      };
+    }).filter(Boolean).sort((a, b) => {
+      if (a.is_default !== b.is_default) return a.is_default ? -1 : 1;
+      return b.tokens - a.tokens;
+    });
+    // 找出最大 token 用于进度条
+    const maxTokens = Math.max(...modelRows.map(r => r.tokens), 1);
     return {
-      status: 'ok',
-      default_model: defaultModel,
-      available_count: models.length,
-      fallbacks_count: fallbacks.length,
-      models: models.sort(),
-      fallbacks,
+      status: 'ok', default_model: defaultModel,
+      available_count: modelRows.length, fallbacks_count: fallbacks.length,
+      models: allModels.sort(), fallbacks, model_rows: modelRows,
     };
   } catch (error) {
     return { status: 'failed', count: 0, error: error.message };
@@ -622,6 +674,23 @@ function collectWebChat() {
   }
 }
 
+// MiMo Token Plan 单价（元/百万 tokens）
+// 基于 Lite 套餐 ¥39/6000万 Credits 换算
+const MIMO_PRICING = {
+  'mimo-v2.5-pro':  1.30,   // 2 Credits/token
+  'mimo-v2.5':      0.65,   // 1 Credit/token
+  'mimo-v2-pro':    1.30,   // 2 Credits/token (256k)
+  'mimo-v2-flash':  0.70,   // 按量 ¥0.7/M
+  'mimo-v2-omni':   0.65,   // 1 Credit/token
+};
+
+function estimateModelCost(model, tokens) {
+  const shortName = model.split('/').pop();
+  const rate = MIMO_PRICING[shortName];
+  if (!rate) return null; // 非 MiMo 模型，无法估算
+  return Math.round(tokens * rate) / 1000; // tokens/k * rate/M * 1000 = 元
+}
+
 function collectCosts() {
   const sessionDir = path.join(OPENCLAW_ROOT, 'agents', 'main', 'sessions');
   const { start, buckets, index } = createDayBuckets(7);
@@ -647,24 +716,48 @@ function collectCosts() {
           if (eventTime >= start) addBucketValue(index, eventTime, usageTokens / 1000);
           if (!isTodaySession) continue;
           totalTokens += usageTokens;
-          totalCost += usage.cost?.total || 0;
+          // 优先用 API 返回的费用，没有则按 MiMo 单价估算
+          const apiCost = usage.cost?.total || 0;
+          totalCost += apiCost;
           if (usage.cacheRead) { cacheHits++; cacheTotal += usage.cacheRead; }
           const model = obj.message?.model || obj.message?.api || 'unknown';
-          if (!byModel[model]) byModel[model] = { tokens: 0, cost: 0 };
+          if (!byModel[model]) byModel[model] = { tokens: 0, cost: 0, estimatedCost: 0, cacheRead: 0, requests: 0 };
           byModel[model].tokens += usageTokens;
-          byModel[model].cost += usage.cost?.total || 0;
+          byModel[model].cost += apiCost;
+          byModel[model].cacheRead += usage.cacheRead || 0;
+          byModel[model].requests += 1;
         } catch {}
       }
     }
     const topModel = Object.entries(byModel).sort((a,b) => b[1].tokens - a[1].tokens)[0];
     const byModelStr = Object.entries(byModel).slice(0, 3).map(([m,d]) => `${m.split('/').pop()}:${Math.round(d.tokens/1000)}k`).join(' ');
+    // 按模型拆分详细数据（MiMo 模型费用按单价估算）
+    const byModelDetail = Object.entries(byModel)
+      .sort((a, b) => b[1].tokens - a[1].tokens)
+      .map(([model, d]) => {
+        const tokensK = Math.round(d.tokens / 1000);
+        const apiCost = Math.round(d.cost * 1000) / 1000;
+        const estimated = estimateModelCost(model, tokensK);
+        return {
+          model,
+          short_name: model.split('/').pop(),
+          tokens: tokensK,
+          cost: apiCost > 0 ? apiCost : (estimated || 0),
+          cost_estimated: apiCost === 0 && estimated !== null,
+          cache_rate: d.tokens ? Math.round(d.cacheRead / d.tokens * 100) : 0,
+          requests: d.requests || 0,
+        };
+      });
+    // 重新计算总费用（含估算）
+    const adjustedTotalCost = byModelDetail.reduce((sum, d) => sum + d.cost, 0);
     return {
       status: 'ok',
       total_tokens: Math.round(totalTokens / 1000),
-      cost_today: Math.round(totalCost * 1000) / 1000,
+      cost_today: Math.round(adjustedTotalCost * 1000) / 1000,
       cache_rate: totalTokens ? Math.round(cacheTotal / totalTokens * 100) : 0,
       top_model: topModel?.[0]?.split('/').pop() ?? '-',
       by_model: byModelStr || '-',
+      by_model_detail: byModelDetail,
       trend_7d: trendValues(buckets),
     };
   } catch (error) {
@@ -917,15 +1010,16 @@ function collectChatCollector() {
 }
 
 function buildSnapshot() {
+  const costs = collectCosts();
   const resources = {
     disk: collectDisk(),
     gateway: collectGateway(),
     sessions: collectSessions(),
     diaries: collectDiaries(),
-    models: collectModels(),
+    models: collectModels(costs.by_model_detail),
     backups: collectBackups(),
     webchat: collectWebChat(),
-    costs: collectCosts(),
+    costs,
     agent: collectAgentActivity(),
   };
   const failedCollectors = Object.entries(resources)
@@ -988,7 +1082,9 @@ function buildSnapshot() {
 
 function writeSnapshot(snapshot) {
   fs.mkdirSync(path.dirname(SNAPSHOT_PATH), { recursive: true });
-  fs.writeFileSync(SNAPSHOT_PATH, `${JSON.stringify(snapshot, null, 2)}\n`, 'utf8');
+  const tmp = `${SNAPSHOT_PATH}.tmp-${process.pid}-${Date.now()}`;
+  fs.writeFileSync(tmp, `${JSON.stringify(snapshot, null, 2)}\n`, 'utf8');
+  fs.renameSync(tmp, SNAPSHOT_PATH);
   return SNAPSHOT_PATH;
 }
 
@@ -1830,20 +1926,53 @@ function renderReportsPage(snapshot, language) {
 
 function renderModelsPage(snapshot, language) {
   const models = snapshot.resources.models ?? {};
-  const fallbackSet = new Set(Array.isArray(models.fallbacks) ? models.fallbacks : []);
-  const rows = (models.models || []).map((model) => `<tr class="${model === models.default_model ? 'active-row' : ''}">
-    <td>${escapeHtml(model)}</td>
-    <td>${model === models.default_model ? '默认' : '-'}</td>
-    <td>${fallbackSet.has(model) ? '备用' : '-'}</td>
-  </tr>`);
+  const costs = snapshot.resources.costs ?? {};
+  const rows = (models.model_rows || []);
+  const maxTokens = Math.max(...rows.map(r => r.tokens), 1);
+  const isZh = language !== 'en';
+
+  const tableRows = rows.map((m) => {
+    const isActive = m.requests > 0;
+    const pct = Math.round(m.tokens / maxTokens * 100);
+    const cacheStr = m.cache_rate !== null && m.cache_rate > 0 ? `${m.cache_rate}%` : '-';
+    const costStr = m.cost > 0 ? (isZh ? '\u00a5' : '$') + m.cost.toFixed(3) : '-';
+    const roleHtml = m.role === 'default'
+      ? '<span class="role-tag role-default">' + (isZh ? '默认' : 'Default') + '</span>'
+      : m.role === 'fallback'
+      ? '<span class="role-tag role-fallback">' + (isZh ? '备用' : 'Fallback') + '</span>'
+      : '';
+    return `<tr class="${m.is_default ? 'active-row' : isActive ? '' : 'dim-row'}">
+      <td class="model-name">${escapeHtml(m.short_name)}</td>
+      <td>${roleHtml}</td>
+      <td class="num">${isActive ? formatNumber(m.tokens, language) + 'k' : '-'}</td>
+      <td class="num">${costStr}</td>
+      <td class="num">${cacheStr}</td>
+      <td class="num">${isActive ? formatNumber(m.requests, language) : '-'}</td>
+      <td class="bar-cell"><div class="token-bar" style="width:${pct}%"></div></td>
+    </tr>`;
+  }).join('');
+
+  const activeCount = rows.filter(r => r.requests > 0).length;
   return `<section class="metric-grid">
-    ${renderMetricCard('默认模型', models.default_model || '-', `${models.available_count ?? 0} available`, 'accent')}
-    ${renderMetricCard('可用模型', formatNumber(models.available_count ?? 0, language), 'openclaw.json')}
-    ${renderMetricCard('备用模型', formatNumber(models.fallbacks_count ?? 0, language), (models.fallbacks || []).join(' / ') || '-')}
+    ${renderMetricCard(isZh ? '总 Token' : 'Total Tokens', formatNumber(costs.total_tokens ?? 0, language) + 'k', costs.top_model ? `Top: ${costs.top_model}` : '-', 'accent')}
+    ${renderMetricCard(isZh ? '总费用' : 'Total Cost', (isZh ? '\u00a5' : '$') + (costs.cost_today ?? 0).toFixed(3), isZh ? '今日' : 'today')}
+    ${renderMetricCard(isZh ? '缓存命中率' : 'Cache Rate', (costs.cache_rate ?? 0) + '%', isZh ? '缓存命中' : 'cache hit', costs.cache_rate > 50 ? 'good' : costs.cache_rate > 0 ? 'warn' : '')}
+    ${renderMetricCard(isZh ? '活跃模型' : 'Active Models', String(activeCount), `${rows.length} ${isZh ? '已配置' : 'configured'}`)}
   </section>
   <section class="page-panel">
-    <div class="panel-title"><span>OpenClaw 模型队列</span><strong>${escapeHtml(models.status || 'unknown')}</strong></div>
-    ${renderTable(['模型', '默认', 'Fallback'], rows, '暂无模型配置')}
+    <div class="panel-title"><span>OpenClaw ${isZh ? '模型队列' : 'Model Queue'}</span><strong>${escapeHtml(models.status || 'unknown')}</strong></div>
+    <table class="data-table model-table">
+      <thead><tr>
+        <th>${isZh ? '模型' : 'Model'}</th>
+        <th>${isZh ? '角色' : 'Role'}</th>
+        <th class="num">Token</th>
+        <th class="num">${isZh ? '费用' : 'Cost'}</th>
+        <th class="num">${isZh ? '缓存' : 'Cache'}</th>
+        <th class="num">${isZh ? '调用' : 'Calls'}</th>
+        <th class="bar-col"></th>
+      </tr></thead>
+      <tbody>${tableRows || `<tr><td colspan="7" class="empty">${isZh ? '暂无模型配置' : 'No models configured'}</td></tr>`}</tbody>
+    </table>
   </section>`;
 }
 
@@ -2095,6 +2224,7 @@ function renderWorkspace(snapshot, request) {
     .confirm-dialog { width:min(420px,calc(100% - 32px)); border:1px solid var(--line); border-radius:8px; padding:0; background:var(--surface); color:var(--text); box-shadow:var(--shadow); } .confirm-dialog::backdrop { background:rgba(3,6,10,.66); } .dialog-inner { padding:18px; } .dialog-inner p { margin:0; color:var(--muted); font-size:13px; } .dialog-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:18px; }
     ::view-transition-old(page-content), ::view-transition-new(page-content) { animation-duration:.18s; animation-timing-function:ease; }
     @media (max-width:1180px) { .metric-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .card,.card-wide { grid-column:span 6; } .filter-bar { grid-template-columns:repeat(3,minmax(0,1fr)); } .page-grid.two,.split-view { grid-template-columns:1fr; } .knowledge-list { max-height:none; } }
+    .data-table { width:100%; border-collapse:collapse; font-size:13px; } .data-table th,.data-table td { padding:9px 12px; text-align:left; border-bottom:1px solid var(--line-soft); } .data-table th { color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.4px; background:rgba(255,255,255,.02); } .data-table td.num,.data-table th.num { text-align:right; font-variant-numeric:tabular-nums; } .data-table .empty { text-align:center; color:var(--faint); padding:28px 12px; } .data-table tbody tr:hover { background:rgba(117,208,189,.04); } .data-table .active-row { background:rgba(117,208,189,.06); } .data-table .active-row .model-name { color:var(--accent-strong); font-weight:700; } .data-table .dim-row { opacity:.45; } .data-table .dim-row:hover { opacity:.7; } .model-table td,.model-table th { padding:8px 10px; } .model-table .bar-col { width:120px; padding:0; } .model-table .bar-cell { padding:8px 4px 8px 0; } .token-bar { height:6px; border-radius:3px; background:linear-gradient(90deg,var(--accent),var(--orange)); min-width:2px; transition:width .3s ease; } .dim-row .token-bar { background:var(--line); } .role-tag { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; } .role-default { background:rgba(117,208,189,.15); color:var(--accent-strong); } .role-fallback { background:rgba(241,204,119,.12); color:#f1cc77; }
     @media (prefers-reduced-motion: reduce) { .bg-grid,.bg-dots,.bg-glow,.bg-flow-lines { animation:none; } #agentCanvas { display:none; } button, .btn-link, .nav a, .knowledge-item, .language-switch a, select, input, .page-content, .route-progress { transition:none; } }
     @media (max-width:760px) { .app-shell,.sidebar-collapsed .app-shell { grid-template-columns:minmax(0,1fr); } .sidebar,.sidebar-collapsed .sidebar { position:relative; width:100%; max-width:100vw; height:auto; padding:12px; border-right:0; border-bottom:1px solid var(--line); overflow:hidden; } .brand { display:none; } .sidebar-toggle { display:none; } .nav { display:flex; overflow:auto; gap:6px; } .nav a,.sidebar-collapsed .nav a { flex:0 0 auto; justify-content:flex-start; padding:8px 10px; } .nav-short,.sidebar-collapsed .nav-short { display:none; } .nav-label,.sidebar-collapsed .nav-label { display:inline; } .workspace { width:100%; max-width:100vw; padding:14px; } .topbar { grid-template-columns:1fr; } .top-actions { justify-content:flex-start; } .metric-grid,.resource-grid,.page-grid.two,.pipeline,.kv-grid,.kv-grid.compact,.filter-bar { grid-template-columns:minmax(0,1fr); } .card,.card-wide { grid-column:1 / -1; } .card-body { grid-template-columns:1fr; } .spark-wrap,.disk-ring,.process-visual { justify-self:start; } table { min-width:100%; table-layout:fixed; } }
   </style>
@@ -2474,6 +2604,13 @@ if (process.argv.includes('--once')) {
 } else {
   refreshSnapshotSync('startup');
   const server = http.createServer(async (request, response) => {
+    // DNS rebinding / cross-origin protection: only accept loopback Host headers.
+    const hostHeader = request.headers.host;
+    if (!hostHeader || !ALLOWED_HOSTS.has(hostHeader)) {
+      sendResponse(response, 403, 'Forbidden host', 'text/plain; charset=utf-8');
+      return;
+    }
+
     const url = new URL(request.url || '/', `http://${HOST}:${PORT}`);
     // OpenClaw is monitored here but managed by an external terminal, system task, or service.
     if (request.method === 'POST' && url.pathname === '/start-openclaw') {
@@ -2514,8 +2651,19 @@ if (process.argv.includes('--once')) {
       );
       return;
     }
-    // Default: render dashboard
-    const snapshot = getSnapshotForRequest(url.searchParams.get('refresh') === '1');
+    // Default: render dashboard. Force refresh is rate-limited to prevent
+    // sync-rebuild DoS: any extra ?refresh=1 within the window falls back to
+    // cached snapshot + background async refresh.
+    let force = url.searchParams.get('refresh') === '1';
+    if (force) {
+      const now = Date.now();
+      if (now - lastForceRefreshAt < FORCE_REFRESH_RATE_LIMIT_MS) {
+        force = false;
+      } else {
+        lastForceRefreshAt = now;
+      }
+    }
+    const snapshot = getSnapshotForRequest(force);
     const wantsPartial = url.searchParams.get('partial') === '1' || request.headers['x-adgai-partial'] === '1';
     if (wantsPartial) {
       sendResponse(response, 200, JSON.stringify(renderWorkspaceParts(snapshot, request)), 'application/json');
@@ -2523,6 +2671,9 @@ if (process.argv.includes('--once')) {
     }
     sendResponse(response, 200, renderWorkspace(snapshot, request));
   });
+  server.requestTimeout = 60000;
+  server.headersTimeout = 10000;
+  server.keepAliveTimeout = 5000;
   server.listen(PORT, HOST, () => {
     console.log(`Private console: http://${HOST}:${PORT}`);
     console.log(`Private snapshot: ${SNAPSHOT_PATH}`);

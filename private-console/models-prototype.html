@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>模型队列 - 方案C 原型</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-2: #1c2128;
+    --line: #30363d;
+    --line-soft: #21262d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --faint: #484f58;
+    --accent: #75d0bd;
+    --accent-strong: #5eead4;
+    --orange: #f0883e;
+    --red: #f85149;
+    --yellow: #d29922;
+    --font-mono: "Cascadia Code", "Consolas", monospace;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font:14px/1.5 -apple-system,"Segoe UI",sans-serif; padding:24px; }
+
+  /* 汇总卡片 */
+  .summary-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px; }
+  .summary-card { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:16px; display:grid; gap:6px; }
+  .summary-card .label { color:var(--muted); font-size:12px; display:flex; align-items:center; gap:6px; }
+  .summary-card .value { font:780 28px/1.1 var(--font-mono); }
+  .summary-card .sub { color:var(--faint); font-size:12px; }
+  .summary-card.accent .value { color:var(--orange); }
+  .summary-card.good .value { color:var(--accent-strong); }
+
+  /* 主区域：左右分栏 */
+  .main-area { display:grid; grid-template-columns:1fr 320px; gap:16px; }
+
+  /* 左侧：模型卡片列表 */
+  .model-list { display:grid; gap:10px; }
+  .model-card { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:14px 16px; display:grid; gap:10px; transition:border-color .2s; }
+  .model-card:hover { border-color:var(--accent); }
+  .model-card.active { border-left:3px solid var(--accent); }
+  .model-card.dimmed { opacity:.4; }
+  .model-card.dimmed:hover { opacity:.65; }
+  .model-top { display:flex; justify-content:space-between; align-items:center; }
+  .model-name { font-weight:700; font-size:15px; display:flex; align-items:center; gap:8px; }
+  .model-name .dot { width:8px; height:8px; border-radius:50%; }
+  .dot-default { background:var(--accent-strong); box-shadow:0 0 6px var(--accent); }
+  .dot-active { background:var(--muted); }
+  .dot-inactive { background:var(--faint); }
+  .role-badge { font-size:11px; padding:2px 8px; border-radius:4px; font-weight:600; }
+  .role-default { background:rgba(117,208,189,.15); color:var(--accent-strong); }
+  .role-fallback { background:rgba(210,153,34,.15); color:var(--yellow); }
+  .model-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .stat { text-align:center; }
+  .stat .stat-val { font:700 16px/1.2 var(--font-mono); }
+  .stat .stat-label { font-size:11px; color:var(--muted); }
+  .token-bar-wrap { height:6px; background:var(--line-soft); border-radius:3px; overflow:hidden; }
+  .token-bar-fill { height:100%; border-radius:3px; background:linear-gradient(90deg,var(--accent),var(--orange)); transition:width .4s ease; }
+  .dimmed .token-bar-fill { background:var(--faint); }
+
+  /* 右侧：环形图 + 图例 */
+  .donut-panel { background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:20px; display:grid; align-content:start; gap:16px; }
+  .donut-title { font-weight:700; font-size:14px; color:var(--muted); }
+  .donut-wrap { display:flex; justify-content:center; }
+  .donut-chart { position:relative; width:200px; height:200px; }
+  .donut-chart svg { transform:rotate(-90deg); }
+  .donut-center { position:absolute; inset:0; display:grid; place-items:center; text-align:center; }
+  .donut-center .big { font:780 24px/1.1 var(--font-mono); color:var(--text); }
+  .donut-center .small { font-size:11px; color:var(--muted); }
+  .legend { display:grid; gap:8px; }
+  .legend-item { display:flex; align-items:center; gap:8px; font-size:13px; }
+  .legend-dot { width:10px; height:10px; border-radius:3px; flex-shrink:0; }
+  .legend-name { flex:1; color:var(--text); }
+  .legend-val { font:600 12px/1 var(--font-mono); color:var(--muted); }
+  .legend-pct { font:700 12px/1 var(--font-mono); color:var(--text); min-width:36px; text-align:right; }
+
+  @media (max-width:900px) {
+    .summary-grid { grid-template-columns:repeat(2,1fr); }
+    .main-area { grid-template-columns:1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 汇总卡片 -->
+<div class="summary-grid">
+  <div class="summary-card accent">
+    <div class="label">📊 总 Token</div>
+    <div class="value">64.2k</div>
+    <div class="sub">Top: deepseek-v4-flash</div>
+  </div>
+  <div class="summary-card">
+    <div class="label">💰 总费用</div>
+    <div class="value">¥39.22</div>
+    <div class="sub">今日 · 含 MiMo 估算</div>
+  </div>
+  <div class="summary-card good">
+    <div class="label">⚡ 缓存命中率</div>
+    <div class="value">95%</div>
+    <div class="sub">缓存读取</div>
+  </div>
+  <div class="summary-card">
+    <div class="label">🧠 活跃模型</div>
+    <div class="value">4</div>
+    <div class="sub">9 已配置</div>
+  </div>
+</div>
+
+<!-- 主区域 -->
+<div class="main-area">
+  <!-- 左侧：模型卡片 -->
+  <div class="model-list">
+    <div class="model-card active">
+      <div class="model-top">
+        <div class="model-name"><span class="dot dot-default"></span>mimo-v2.5-pro</div>
+        <span class="role-badge role-default">默认</span>
+      </div>
+      <div class="model-stats">
+        <div class="stat"><div class="stat-val">29.8k</div><div class="stat-label">Token</div></div>
+        <div class="stat"><div class="stat-val">¥38.74</div><div class="stat-label">费用</div></div>
+        <div class="stat"><div class="stat-val">94%</div><div class="stat-label">缓存</div></div>
+      </div>
+      <div class="token-bar-wrap"><div class="token-bar-fill" style="width:89%"></div></div>
+    </div>
+
+    <div class="model-card active">
+      <div class="model-top">
+        <div class="model-name"><span class="dot dot-active"></span>deepseek-v4-flash</div>
+      </div>
+      <div class="model-stats">
+        <div class="stat"><div class="stat-val">33.6k</div><div class="stat-label">Token</div></div>
+        <div class="stat"><div class="stat-val">¥0.25</div><div class="stat-label">费用</div></div>
+        <div class="stat"><div class="stat-val">97%</div><div class="stat-label">缓存</div></div>
+      </div>
+      <div class="token-bar-wrap"><div class="token-bar-fill" style="width:100%"></div></div>
+    </div>
+
+    <div class="model-card active">
+      <div class="model-top">
+        <div class="model-name"><span class="dot dot-active"></span>deepseek-v4-pro</div>
+      </div>
+      <div class="model-stats">
+        <div class="stat"><div class="stat-val">6.2k</div><div class="stat-label">Token</div></div>
+        <div class="stat"><div class="stat-val">¥0.23</div><div class="stat-label">费用</div></div>
+        <div class="stat"><div class="stat-val">93%</div><div class="stat-label">缓存</div></div>
+      </div>
+      <div class="token-bar-wrap"><div class="token-bar-fill" style="width:19%"></div></div>
+    </div>
+
+    <div class="model-card dimmed">
+      <div class="model-top">
+        <div class="model-name"><span class="dot dot-inactive"></span>glm-5.1</div>
+        <span class="role-badge role-fallback">备用</span>
+      </div>
+      <div class="model-stats">
+        <div class="stat"><div class="stat-val">0</div><div class="stat-label">Token</div></div>
+        <div class="stat"><div class="stat-val">-</div><div class="stat-label">费用</div></div>
+        <div class="stat"><div class="stat-val">-</div><div class="stat-label">缓存</div></div>
+      </div>
+      <div class="token-bar-wrap"><div class="token-bar-fill" style="width:0%"></div></div>
+    </div>
+
+    <div class="model-card dimmed">
+      <div class="model-top">
+        <div class="model-name"><span class="dot dot-inactive"></span>mimo-v2.5 / mimo-v2-pro / mimo-v2-flash / mimo-v2-omni / delivery-mirror</div>
+      </div>
+      <div class="model-stats">
+        <div class="stat"><div class="stat-val">-</div><div class="stat-label">Token</div></div>
+        <div class="stat"><div class="stat-val">-</div><div class="stat-label">费用</div></div>
+        <div class="stat"><div class="stat-val">-</div><div class="stat-label">缓存</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右侧：环形图 -->
+  <div class="donut-panel">
+    <div class="donut-title">Token 分布</div>
+    <div class="donut-wrap">
+      <div class="donut-chart">
+        <svg viewBox="0 0 200 200" width="200" height="200">
+          <!-- deepseek-v4-flash: 33.6k / 69.6k = 48.3% -->
+          <circle cx="100" cy="100" r="80" fill="none" stroke="#58a6ff" stroke-width="24"
+            stroke-dasharray="242.3 502.7" stroke-dashoffset="0" opacity=".85"/>
+          <!-- mimo-v2.5-pro: 29.8k / 69.6k = 42.8% -->
+          <circle cx="100" cy="100" r="80" fill="none" stroke="#f0883e" stroke-width="24"
+            stroke-dasharray="214.9 502.7" stroke-dashoffset="-242.3" opacity=".85"/>
+          <!-- deepseek-v4-pro: 6.2k / 69.6k = 8.9% -->
+          <circle cx="100" cy="100" r="80" fill="none" stroke="#8b949e" stroke-width="24"
+            stroke-dasharray="44.7 502.7" stroke-dashoffset="-457.2" opacity=".6"/>
+          <!-- 其余: ~0% -->
+          <circle cx="100" cy="100" r="80" fill="none" stroke="#21262d" stroke-width="24"
+            stroke-dasharray="502.7 0" stroke-dashoffset="-501.9" opacity=".3"/>
+        </svg>
+        <div class="donut-center">
+          <div class="big">69.6k</div>
+          <div class="small">总 Token</div>
+        </div>
+      </div>
+    </div>
+    <div class="legend">
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#58a6ff"></div>
+        <span class="legend-name">deepseek-v4-flash</span>
+        <span class="legend-val">33.6k</span>
+        <span class="legend-pct">48%</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#f0883e"></div>
+        <span class="legend-name">mimo-v2.5-pro</span>
+        <span class="legend-val">29.8k</span>
+        <span class="legend-pct">43%</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#8b949e"></div>
+        <span class="legend-name">deepseek-v4-pro</span>
+        <span class="legend-val">6.2k</span>
+        <span class="legend-pct">9%</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#21262d"></div>
+        <span class="legend-name">其他</span>
+        <span class="legend-val">0</span>
+        <span class="legend-pct">0%</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

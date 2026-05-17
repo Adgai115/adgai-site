@@ -5,7 +5,7 @@ import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const OUTPUT = path.join(ROOT, 'public-site', 'assets', 'resource-workbench.png');
+const OUTPUT = path.resolve(ROOT, '..', 'adgai-site-public', 'assets', 'resource-workbench.png');
 const WIDTH = 1200;
 const HEIGHT = 760;
 

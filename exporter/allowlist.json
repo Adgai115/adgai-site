@@ -1,6 +1,6 @@
 {
   "source_private_snapshot": "../private-console/snapshots/private_snapshot.json",
-  "output_public_snapshot": "../public-site/data/public_snapshot.json",
+  "output_public_snapshot": "../../adgai-site-public/data/public_snapshot.json",
   "public_fields": {
     "site": [
       "owner",

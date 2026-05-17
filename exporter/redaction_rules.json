@@ -12,14 +12,17 @@
     "lark token",
     "wechat",
     "webchat",
-    "cookie",
-    "bearer ",
-    "api_key",
-    "apikey",
-    "secret",
-    "token",
     "127.0.0.1:18789",
     "127.0.0.1:18666"
+  ],
+  "blocked_regex_patterns": [
+    "[A-Za-z]:[\\\\/]\\.?openclaw",
+    "\\bbearer\\s+[A-Za-z0-9._=-]{8,}\\b",
+    "\\bsk-[A-Za-z0-9]{20,}\\b",
+    "\\b(?:api[_-]?key|access[_-]?token|secret[_-]?key|client[_-]?secret)\\s*[:=]",
+    "\\bxox[apbsr]-[A-Za-z0-9-]{10,}\\b",
+    "\\bgh[pousr]_[A-Za-z0-9]{36,}\\b",
+    "-----BEGIN (?:RSA |DSA |EC |OPENSSH |ENCRYPTED |PRIVATE )?PRIVATE KEY-----"
   ],
   "blocked_extensions": [
     ".env",
@@ -30,4 +33,3 @@
     ".pem"
   ]
 }
-
